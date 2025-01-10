@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+LOG_LEVEL=`echo $LOG_LEVEL | tr A-Z a-z`
+test $LOG_LEVEL == "debug" && set -x
+
+# Configuration
+PORT=8080
+WWWROOT=htdocs
+RUNDIR=run
+
+# HTTP Response Helpers
+respond() {
+    local status="$1"
+    local content_type="${2:-text/plain}"
+    local content="$3"
+    local content_length
+    content_length=$(($(echo -n "$content" | wc -c)+1))
+    echo -e "HTTP/1.1 $status\r\nContent-Type: $content_type\r\nContent-Length: $content_length\r\n\r\n$content"
+}
+
+read_content_length() {
+    local content_length=0
+    while read -r header; do
+        test -z "$header" && break
+        if [[ $header =~ ^Content-Length:\ ([0-9]+) ]]; then
+            content_length=${BASH_REMATCH[1]}
+            break
+        fi
+    done
+    echo $content_length
+}
+
+handle_request() {
+    local line="$1"
+    if [[ $line =~ ^(GET|POST|PUT|DELETE|PATCH)\ /(.*)\ HTTP.*$ ]]; then
+        METHOD=${BASH_REMATCH[1]}
+        REQUEST_PATH=$WWWROOT/${BASH_REMATCH[2]}
+        
+        case $METHOD in
+            GET)
+                if test -f $REQUEST_PATH; then
+                    respond "200 OK" "$(file -b --mime-type $REQUEST_PATH)" "$(cat $REQUEST_PATH)"
+                else
+                    respond "404 Not Found" "text/plain" "404 Not Found"
+                fi
+                ;;
+            POST)
+                local content_length=$(read_content_length)
+                local post_data=""
+                test $content_length -gt 0 && read -n $content_length post_data
+                
+                while IFS= read -r line; do 
+                    export "$line"
+                done <<< "$post_data"
+                
+                if test -x "$REQUEST_PATH"; then
+                    respond "200 OK" "text/plain" "$($REQUEST_PATH)"
+                else
+                    respond "404 Not Found" "text/plain" "Script not found or not executable" 
+                fi
+                ;;
+            PUT)
+                local content_length=$(read_content_length)
+                
+                if test $content_length -gt 0; then
+                    dd bs=$content_length count=1 of="$REQUEST_PATH"
+                    respond "201 Created" "text/plain" "File created"
+                else
+                    respond "411 Length Required" "text/plain" "Content-Length required"
+                fi
+                ;;
+            DELETE)
+                if test -f "$REQUEST_PATH"; then
+                    rm "$REQUEST_PATH"
+                    respond "200 OK" "text/plain" "File deleted"
+                else
+                    respond "404 Not Found" "text/plain" "404 Not Found"
+                fi
+                ;;
+            *)
+                respond "501 Not Implemented" "text/plain" "Method not implemented"
+                ;;
+        esac
+    fi
+}
+
+
+REQ=$RUNDIR/rx RES=$RUNDIR/tx
+mkfifo $REQ $RES
+
+cleanup() {
+    rm -f $REQ $RES
+    kill %1 2>/dev/null
+    set +x
+    exit
+}
+
+trap cleanup EXIT SIGINT
+
+# Prime the nc_in pipe first
+echo >$REQ &
+
+while true; do
+    read line <$RES
+    handle_request "$line" >$REQ
+done &
+
+nc -lk $PORT <$REQ >$RES

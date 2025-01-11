@@ -91,6 +91,26 @@ handle_request() {
                     respond "411 Length Required" "" "Content-Length required"
                 fi
                 ;;
+            PATCH)
+                local content_length=${HEADERS[content-length]:-0}
+                local patch_data=""
+                
+                if ! test -f "$REQUEST_PATH"; then
+                    respond "404 Not Found" "" "Target file not found"
+                    return
+                fi
+                
+                if test $content_length -gt 0; then
+                    read -n $content_length patch_data
+                    if echo "$patch_data" | patch "$REQUEST_PATH" -; then
+                        respond "200 OK" "" "Patch applied"
+                    else
+                        respond "400 Bad Request" "" "Patch failed to apply"
+                    fi
+                else
+                    respond "411 Length Required" "" "Content-Length required"
+                fi
+                ;;
             DELETE)
                 if test -f "$REQUEST_PATH"; then
                     if rm "$REQUEST_PATH"; then
@@ -108,7 +128,6 @@ handle_request() {
         esac
     fi
 }
-
 
 REQ=$RUNDIR/rx RES=$RUNDIR/tx
 mkfifo $REQ $RES

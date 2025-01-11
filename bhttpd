@@ -104,6 +104,8 @@ echo >$REQ &
 
 while true; do
     read line <$RES
+    # first request is always bogus due to te pipe priming
+    [[ $line =~ ^(GET|POST|PUT|DELETE|PATCH)\ /.*\ HTTP.*$ ]] || continue
     handle_request "$line" >$REQ
 done &
 

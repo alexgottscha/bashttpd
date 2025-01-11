@@ -50,7 +50,6 @@ parse_headers() {
     done
 }
 
-
 handle_request() {
     local line="$1"
     if [[ $line =~ ^(GET|POST|PUT|DELETE|PATCH)\ /(.*)\ HTTP.*$ ]]; then
@@ -116,7 +115,7 @@ mkfifo $REQ $RES
 
 cleanup() {
     rm -f $REQ $RES
-    kill %1 2>/dev/null
+    kill %2 2>/dev/null
     set +x
     exit
 }

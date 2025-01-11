@@ -24,7 +24,7 @@ respond() {
 }
 
 parse_headers() {
-    declare -A headers
+    declare -g -A HEADERS
     local prev_header=""
     
     while read -r line; do
@@ -35,7 +35,7 @@ parse_headers() {
         if [[ $line =~ ^[[:space:]] ]]; then
             # Append to previous header if exists
             if [[ -n "$prev_header" ]]; then
-                headers[$prev_header]+=" ${line## }"
+                HEADERS[$prev_header]+=" ${line## }"
             fi
             continue
         fi
@@ -44,7 +44,7 @@ parse_headers() {
         if [[ $line =~ ^([^:]+):\ (.*)$ ]]; then
             local name="${BASH_REMATCH[1],,}"  # lowercase header name
             local value="${BASH_REMATCH[2]}"
-            headers[$name]="$value"
+            HEADERS[$name]="$value"
             prev_header="$name"
         fi
     done
@@ -53,8 +53,8 @@ parse_headers() {
 handle_request() {
     local line="$1"
     if [[ $line =~ ^(GET|POST|PUT|DELETE|PATCH)\ /(.*)\ HTTP.*$ ]]; then
-        METHOD=${BASH_REMATCH[1]}
-        REQUEST_PATH=$WWWROOT/${BASH_REMATCH[2]}
+        declare -g METHOD=${BASH_REMATCH[1]}
+        declare -g REQUEST_PATH=$WWWROOT/${BASH_REMATCH[2]}
         parse_headers
 
         case $METHOD in
@@ -66,7 +66,7 @@ handle_request() {
                 fi
                 ;;
             POST)
-                local content_length=${headers[content-length]:-0}
+                local content_length=${HEADERS[content-length]:-0}
                 local post_data=""
                 test $content_length -gt 0 && read -n $content_length post_data
                 
@@ -82,7 +82,7 @@ handle_request() {
                 fi
                 ;;
             PUT)
-                content_length=${headers[content-length]:-0}
+                content_length=${HEADERS[content-length]:-0}
                 
                 if test $content_length -gt 0; then
                     dd bs=$content_length count=1 of="$REQUEST_PATH"
